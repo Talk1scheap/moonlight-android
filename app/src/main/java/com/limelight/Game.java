@@ -1300,6 +1300,78 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         return (byte) modifierFlags;
     }
 
+    /**
+     * Devices without joystick axes (TV remotes, pure D-pads) are treated as remotes.
+     * Real gamepads with sticks keep their D-pad as controller input.
+     * Alphabetic keyboards keep ENTER as Return via the normal keyboard path.
+     */
+    private static boolean isTvRemoteLikeDevice(InputDevice device) {
+        if (device == null) {
+            return true;
+        }
+        if (ControllerHandler.hasJoystickAxes(device)) {
+            return false;
+        }
+        if (device.getKeyboardType() == InputDevice.KEYBOARD_TYPE_ALPHABETIC) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Maps TV remote navigation keys to Windows VK codes used by the host keyboard path.
+     * @return VK code, or 0 if the key is not remapped
+     */
+    private static int mapTvRemoteKeyToWindowsVk(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                return KeyboardTranslator.VK_LEFT;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return KeyboardTranslator.VK_RIGHT;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                return KeyboardTranslator.VK_UP;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return KeyboardTranslator.VK_DOWN;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+                return KeyboardTranslator.VK_SPACE;
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * During an active stream, map TV remote D-pad and confirm to host keyboard arrows/space.
+     * Must run before ControllerHandler so remotes are not treated as gamepads.
+     */
+    private boolean tryHandleTvRemoteAsKeyboard(KeyEvent event, boolean isDown) {
+        if (!connected || !grabbedInput || conn == null) {
+            return false;
+        }
+
+        if (!isTvRemoteLikeDevice(event.getDevice())) {
+            return false;
+        }
+
+        int windowsVk = mapTvRemoteKeyToWindowsVk(event.getKeyCode());
+        if (windowsVk == 0) {
+            return false;
+        }
+
+        // Match the normal keyboard path: suppress auto-repeat downs on the host side.
+        if (isDown && event.getRepeatCount() > 0) {
+            return true;
+        }
+
+        // GFE key format: high byte 0x80, low byte Windows VK
+        short translated = (short) ((0x80 << 8) | windowsVk);
+        conn.sendKeyboardInput(translated,
+                isDown ? KeyboardPacket.KEY_DOWN : KeyboardPacket.KEY_UP,
+                getModifierState(event),
+                (byte) 0);
+        return true;
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         return handleKeyDown(event) || super.onKeyDown(keyCode, event);
@@ -1329,6 +1401,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
             // Always return true, otherwise the back press will be propagated
             // up to the parent and finish the activity.
+            return true;
+        }
+
+        // TV remote: D-pad -> arrow keys, confirm -> space (stream only)
+        if (tryHandleTvRemoteAsKeyboard(event, true)) {
             return true;
         }
 
@@ -1410,6 +1487,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
             // Always return true, otherwise the back press will be propagated
             // up to the parent and finish the activity.
+            return true;
+        }
+
+        // TV remote: D-pad -> arrow keys, confirm -> space (stream only)
+        if (tryHandleTvRemoteAsKeyboard(event, false)) {
             return true;
         }
 

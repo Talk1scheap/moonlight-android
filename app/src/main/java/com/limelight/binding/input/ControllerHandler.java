@@ -315,7 +315,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
-    private static boolean hasJoystickAxes(InputDevice device) {
+    public static boolean hasJoystickAxes(InputDevice device) {
         return (device.getSources() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK &&
                 getMotionRangeForJoystickAxis(device, MotionEvent.AXIS_X) != null &&
                 getMotionRangeForJoystickAxis(device, MotionEvent.AXIS_Y) != null;
